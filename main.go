@@ -36,6 +36,7 @@ func printHelp() {
 	fmt.Println("  --port PORT              Port to listen on (default: 1080)")
 	fmt.Println("  --users FILE             Path to users configuration file")
 	fmt.Println("  --user USER              User credentials in format username:password (can be used multiple times)")
+	fmt.Println("  --allow-internal         Allow proxying to private/internal IPs (default: false)")
 	fmt.Println("  --version                Show version information")
 	fmt.Println("  --help                   Show this help message")
 	fmt.Println()
@@ -43,6 +44,9 @@ func printHelp() {
 	fmt.Println("  - If no users are configured, the server runs without authentication")
 	fmt.Println("  - If at least one user is configured, authentication is required")
 	fmt.Println("  - Users can be loaded from file and/or added via multiple --user flags")
+	fmt.Println()
+	fmt.Println("Internal destinations (blocked unless --allow-internal):")
+	fmt.Println("  - Loopback, RFC1918 private, link-local, unspecified, CGNAT 100.64.0.0/10, ULA IPv6")
 }
 
 func addUser(credentials socks5.StaticCredentials, username, password string) {
@@ -68,11 +72,12 @@ func addUser(credentials socks5.StaticCredentials, username, password string) {
 
 func main() {
 	var (
-		port      = flag.Int("port", 1080, "Port to listen on")
-		host      = flag.String("host", "0.0.0.0", "Host to bind to")
-		usersFile = flag.String("users", "", "Path to users configuration file")
-		help      = flag.Bool("help", false, "Show help message")
-		version   = flag.Bool("version", false, "Show version information")
+		port          = flag.Int("port", 1080, "Port to listen on")
+		host          = flag.String("host", "0.0.0.0", "Host to bind to")
+		usersFile     = flag.String("users", "", "Path to users configuration file")
+		allowInternal = flag.Bool("allow-internal", false, "Allow proxying to private/internal IPs (default: false)")
+		help          = flag.Bool("help", false, "Show help message")
+		version       = flag.Bool("version", false, "Show version information")
 	)
 
 	var userFlags arrayFlags
@@ -137,12 +142,19 @@ func main() {
 	}
 
 	// Create SOCKS5 server configuration
+	rules := newInternalFilterRule(*allowInternal)
+	if *allowInternal {
+		log.Println("Internal/private destinations: allowed")
+	} else {
+		log.Println("Internal/private destinations: blocked")
+	}
+
 	var conf *socks5.Config
 
 	if len(credentials) == 0 {
 		// No credentials provided - allow anonymous access
 		log.Println("No credentials provided - running without authentication")
-		conf = &socks5.Config{}
+		conf = &socks5.Config{Rules: rules}
 	} else {
 		// Credentials provided - require authentication
 		log.Printf("Running with authentication - %d credential(s) configured", len(credentials))
@@ -169,6 +181,7 @@ func main() {
 		authenticator := socks5.UserPassAuthenticator{Credentials: credentials}
 		conf = &socks5.Config{
 			AuthMethods: []socks5.Authenticator{authenticator},
+			Rules:       rules,
 		}
 	}
 

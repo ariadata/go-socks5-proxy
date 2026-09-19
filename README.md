@@ -1,47 +1,49 @@
 # Go SOCKS5 Proxy Server
 
-A lightweight, secure, and feature-rich SOCKS5 proxy server implementation in Go with flexible authentication and multi-platform support.
+A lightweight SOCKS5 proxy server in Go with optional authentication, internal-destination blocking, and multi-platform releases.
 
 ## Features
 
-- 🚀 **SOCKS5 Protocol Support** - Full SOCKS5 proxy implementation
-- 🔐 **Flexible Authentication** - File-based and command-line user management
-- 🐳 **Docker Ready** - Multi-architecture Docker images (amd64, arm64)
-- ⚙️ **Command Line Interface** - Rich CLI with multiple configuration options
-- 🌍 **Multi-Platform Linux** - Binaries for Linux (amd64, arm64, arm)
-- 📦 **No Authentication Mode** - Optional anonymous access
-- 🔄 **Auto-Releases** - Automated GitHub Actions for building and releasing
-- 🛡️ **Secure** - Support for multiple users with different passwords
-- 📝 **Systemd Service** - Easy system service integration
+- SOCKS5 proxy (CONNECT) via [armon/go-socks5](https://github.com/armon/go-socks5)
+- Flexible auth: users file, `--user` flags, or anonymous mode
+- Blocks private/internal destinations by default (`--allow-internal` to override)
+- Minimal Docker image (`scratch`) published to GHCR
+- Multi-platform binaries: Linux (amd64/arm64/arm) and Windows (amd64/arm64)
+- Automated GitHub Actions for Docker builds and tagged releases
 
 ## Installation
 
 ### Option 1: Download Pre-built Binaries
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/ariadata/go-socks5-proxy/releases):
+Download the latest release from [GitHub Releases](https://github.com/ariadata/go-socks5-proxy/releases):
 
-- **Linux (64-bit):** `go-socks5-proxy-linux-amd64.tar.gz`
-- **Linux (ARM64):** `go-socks5-proxy-linux-arm64.tar.gz`
-- **Linux (ARM 32-bit):** `go-socks5-proxy-linux-arm.tar.gz`
+| Platform | Asset |
+|----------|--------|
+| Linux amd64 | `go-socks5-proxy-linux-amd64` |
+| Linux arm64 | `go-socks5-proxy-linux-arm64` |
+| Linux arm | `go-socks5-proxy-linux-arm` |
+| Windows amd64 | `go-socks5-proxy-windows-amd64.exe` |
+| Windows arm64 | `go-socks5-proxy-windows-arm64.exe` |
 
 ```bash
-# Download and extract (example for Linux amd64)
-wget https://github.com/ariadata/go-socks5-proxy/releases/latest/download/go-socks5-proxy-linux-amd64.tar.gz
-tar -xzf go-socks5-proxy-linux-amd64.tar.gz
+# Example: Linux amd64
+wget https://github.com/ariadata/go-socks5-proxy/releases/latest/download/go-socks5-proxy-linux-amd64
 chmod +x go-socks5-proxy-linux-amd64
+./go-socks5-proxy-linux-amd64 --help
 ```
+
+Releases are created by pushing a version tag (`v*`), e.g. `git tag v1.0.0 && git push origin v1.0.0`, or via **Actions → Release → Run workflow**.
 
 ### Option 2: Using Docker
 
 ```bash
-# Pull the latest image
 docker pull ghcr.io/ariadata/go-socks5-proxy:latest
 
-# Run with Docker
 docker run -d -p 1080:1080 \
-  -v $(pwd)/users.conf:/app/users.conf \
+  -v "$(pwd)/users.conf:/users.conf:ro" \
   --name socks5-proxy \
-  ghcr.io/ariadata/go-socks5-proxy:latest
+  ghcr.io/ariadata/go-socks5-proxy:latest \
+  /socks5-server --host 0.0.0.0 --port 1080 --users /users.conf
 ```
 
 ### Option 3: Build from Source
@@ -49,85 +51,89 @@ docker run -d -p 1080:1080 \
 ```bash
 git clone https://github.com/ariadata/go-socks5-proxy.git
 cd go-socks5-proxy
-go build -o socks5-server main.go
+go build -o socks5-server .
 ```
 
 ## Usage
-
-### Command Line Options
 
 ```bash
 ./socks5-server [OPTIONS]
 ```
 
-**Available Options:**
-- `--host HOST` - Host to bind to (default: 0.0.0.0)
-- `--port PORT` - Port to listen on (default: 1080)
-- `--users FILE` - Path to users configuration file
-- `--user USER` - User credentials in format username:password (can be used multiple times)
-- `--version` - Show version information
-- `--help` - Show help message
+### Options
 
-### Authentication Modes
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--host HOST` | Address to bind | `0.0.0.0` |
+| `--port PORT` | Port to listen on | `1080` |
+| `--users FILE` | Path to users config file | (none) |
+| `--user USER` | `username:password` (repeatable) | (none) |
+| `--allow-internal` | Allow proxying to private/internal IPs | `false` |
+| `--version` | Print version | |
+| `--help` | Print help | |
 
-#### 1. No Authentication (Anonymous Access)
+### Authentication
+
+If no users are configured, the server runs **without** authentication. If at least one user is set (file and/or `--user`), authentication is required.
+
+#### Anonymous
 ```bash
 ./socks5-server --port 1080
 ```
 
-#### 2. File-based Authentication
-Create a `users.conf` file:
+#### File-based
+`users.conf`:
 ```plaintext
-# SOCKS5 Proxy User Configuration
-# Format: username:password
+# username:password
 # Lines starting with # are comments
 
 user1:secure_password_123
 user2:another_secure_password
-admin:very_secure_admin_password
 ```
 
-Run with file authentication:
 ```bash
 ./socks5-server --users users.conf --port 1080
 ```
 
-#### 3. Command-line Authentication
+#### Command-line users
 ```bash
 ./socks5-server --user "user1:pass1" --user "user2:pass2" --port 1080
 ```
 
-#### 4. Mixed Authentication (File + Command-line)
+#### Mixed (file + flags)
 ```bash
 ./socks5-server --users users.conf --user "extrauser:extrapass" --port 1080
 ```
 
-### Environment Variables
+### Internal destination blocking
 
-You can also configure the server using environment variables:
-- `SOCKS5_PORT` - Port to listen on (default: :1080)
-- `SOCKS5_CONFIG` - Path to users configuration file
+By default (`--allow-internal=false`), CONNECT to these destinations is rejected (SOCKS rule failure):
+
+- Loopback (`127.0.0.0/8`, `::1`)
+- RFC1918 private (`10/8`, `172.16/12`, `192.168/16`)
+- Link-local, unspecified (`0.0.0.0`, `::`)
+- CGNAT `100.64.0.0/10`
+- IPv6 ULA (`fc00::/7`)
+
+Hostnames are resolved first; if they resolve to an internal IP, they are blocked too.
 
 ```bash
-export SOCKS5_PORT=":8080"
-export SOCKS5_CONFIG="/etc/socks5/users.conf"
-./socks5-server
+# Default: block internal
+./socks5-server --users users.conf
+
+# Allow internal/private destinations
+./socks5-server --users users.conf --allow-internal
 ```
 
-## Systemd Service Setup
-
-Create a systemd service for automatic startup:
+## Systemd Service
 
 ```bash
-# Copy binary to system location
 sudo cp socks5-server /usr/local/bin/
 sudo chmod +x /usr/local/bin/socks5-server
-
-# Create users configuration
 sudo mkdir -p /etc/socks5
 sudo cp users.conf /etc/socks5/
+sudo chmod 600 /etc/socks5/users.conf
 
-# Create systemd service
 sudo tee /etc/systemd/system/socks5-server.service > /dev/null << 'EOF'
 [Unit]
 Description=SOCKS5 Proxy Server
@@ -135,7 +141,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/socks5-server --users /etc/socks5/users.conf --port 1080
+ExecStart=/usr/local/bin/socks5-server --users /etc/socks5/users.conf --host 0.0.0.0 --port 1080
 Restart=always
 RestartSec=5
 User=nobody
@@ -146,198 +152,134 @@ WorkingDirectory=/etc/socks5
 WantedBy=multi-user.target
 EOF
 
-# Enable and start the service
 sudo systemctl daemon-reload
-sudo systemctl enable socks5-server
-sudo systemctl start socks5-server
-
-# Check status
+sudo systemctl enable --now socks5-server
 sudo systemctl status socks5-server
 ```
 
 ## Docker Deployment
 
-### Using Docker Run
+The image is based on `scratch` (static binary only at `/socks5-server`). There is no shell inside the container.
+
+### Docker Run
 
 ```bash
 # With authentication
 docker run -d \
   --name socks5-proxy \
   -p 1080:1080 \
-  -v $(pwd)/users.conf:/app/users.conf \
+  -v "$(pwd)/users.conf:/users.conf:ro" \
   --restart unless-stopped \
-  ghcr.io/ariadata/go-socks5-proxy:latest
+  ghcr.io/ariadata/go-socks5-proxy:latest \
+  /socks5-server --host 0.0.0.0 --port 1080 --users /users.conf
 
-# Without authentication (anonymous access)
+# Anonymous (no users file)
 docker run -d \
   --name socks5-proxy \
   -p 1080:1080 \
   --restart unless-stopped \
   ghcr.io/ariadata/go-socks5-proxy:latest
+
+# Allow internal destinations
+docker run -d \
+  --name socks5-proxy \
+  -p 1080:1080 \
+  -v "$(pwd)/users.conf:/users.conf:ro" \
+  --restart unless-stopped \
+  ghcr.io/ariadata/go-socks5-proxy:latest \
+  /socks5-server --host 0.0.0.0 --port 1080 --users /users.conf --allow-internal
 ```
 
-### Using Docker Compose
+### Docker Compose
 
-Create `docker-compose.yml`:
+See the repo `docker-compose.yml`:
 
 ```yaml
-version: "3.8"
 services:
   socks5-proxy:
     image: ghcr.io/ariadata/go-socks5-proxy:latest
-    container_name: socks5-proxy
+    container_name: go-socks5-proxy
     restart: unless-stopped
     ports:
-      - "1080:1080"
+      - "${DC_PROXY_PORT:-1080}:1080"
+    command: ["/socks5-server", "--host", "0.0.0.0", "--port", "1080", "--users", "/users.conf"]
     volumes:
-      - ./users.conf:/app/users.conf
-    # Optional: Override default command
-    # command: ["./socks5-server", "--users", "/app/users.conf", "--port", "1080"]
+      - ./users.conf:/users.conf:ro
 ```
 
-Start the service:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+Optional: set host port with `DC_PROXY_PORT=1080`.
 
 ## Testing the Proxy
 
-### Using curl
-
 ```bash
-# Test with authentication
+# With authentication
 curl -x socks5://username:password@127.0.0.1:1080 https://httpbin.org/ip
 
-# Test without authentication (if running in anonymous mode)
+# Anonymous
 curl -x socks5://127.0.0.1:1080 https://httpbin.org/ip
 
-# Test SOCKS5h (hostname resolution through proxy)
+# Resolve hostname through the proxy
 curl -x socks5h://username:password@127.0.0.1:1080 https://httpbin.org/ip
 ```
 
-### Using Browser
-
-Configure your browser's SOCKS5 proxy settings:
-- **Proxy Type:** SOCKS5
-- **Host:** 127.0.0.1 (or your server IP)
-- **Port:** 1080
-- **Username/Password:** As configured
-
-## Configuration Examples
-
-### High Security Setup
-```bash
-# Create secure users file with strong passwords
-echo "admin:$(openssl rand -base64 32)" > users.conf
-echo "user1:$(openssl rand -base64 32)" >> users.conf
-
-# Set secure file permissions
-chmod 600 users.conf
-
-# Run server
-./socks5-server --users users.conf --host 127.0.0.1 --port 1080
-```
-
-### Multi-User Corporate Setup
-```bash
-# users.conf
-admin:AdminSecurePass123!
-sales_team:SalesPass456@
-dev_team:DevSecurePass789#
-guest:GuestTempPass000$
-
-# Run server
-./socks5-server --users users.conf --port 1080
-```
+Browser: SOCKS5 → `127.0.0.1:1080` with credentials if configured.
 
 ## Development & Building
 
-### GitHub Actions Workflows
+### GitHub Actions
 
-This project includes automated workflows:
+1. **`build.yml`** — on push to `main`, builds and pushes `ghcr.io/ariadata/go-socks5-proxy` (`latest` + `main-<sha>`)
+2. **`release-multiplatform.yml`** — on tag `v*` (or manual dispatch), builds Linux/Windows binaries and publishes a GitHub Release
 
-1. **Docker Build** (`build.yml`) - Builds and pushes Docker images to GHCR on every push to main
-2. **Linux Multi-Platform Release** (`release-multiplatform.yml`) - Creates Linux binaries for all architectures on release
-
-### Manual Building
+### Manual build
 
 ```bash
-# Build for current platform
-go build -o socks5-server main.go
+go build -o socks5-server .
 
-# Cross-compile for different platforms
-GOOS=linux GOARCH=amd64 go build -o socks5-server-linux-amd64 main.go
-GOOS=linux GOARCH=arm64 go build -o socks5-server-linux-arm64 main.go
+GOOS=linux   GOARCH=amd64 go build -o go-socks5-proxy-linux-amd64 .
+GOOS=windows GOARCH=amd64 go build -o go-socks5-proxy-windows-amd64.exe .
+
+go test ./...
 ```
 
 ## Security Considerations
 
-1. **Strong Passwords** - Use complex passwords (minimum 12 characters)
-2. **File Permissions** - Set `users.conf` to 600 (`chmod 600 users.conf`)
-3. **Network Security** - Use firewall rules to restrict access
-4. **Regular Updates** - Keep the proxy server updated
-5. **Monitoring** - Monitor logs for suspicious activity
-6. **User Management** - Regularly rotate credentials
+1. Use strong passwords; keep `users.conf` mode `600`
+2. Prefer binding behind a firewall or reverse path control
+3. Leave `--allow-internal` off unless you intentionally need LAN/localhost via the proxy
+4. Rotate credentials regularly and watch logs for abuse
 
 ## Troubleshooting
 
-### Common Issues
+**Connection refused** — confirm the process listens on the expected port (`ss -tlnp | grep 1080` or `systemctl status socks5-server`).
 
-1. **Connection Refused**
-   ```bash
-   # Check if server is running
-   netstat -tlnp | grep 1080
-   
-   # Check logs
-   journalctl -u socks5-server -f
-   ```
+**Authentication failed** — check `username:password` format (no extra spaces) and file mount path (`/users.conf` in Docker).
 
-2. **Authentication Failed**
-   - Verify credentials in `users.conf`
-   - Check file permissions
-   - Ensure no extra spaces in username:password format
+**Internal host blocked** — expected by default; pass `--allow-internal` if you need it.
 
-3. **Docker Issues**
-   ```bash
-   # Check container logs
-   docker logs socks5-proxy
-   
-   # Check if users.conf is mounted correctly
-   docker exec socks5-proxy ls -la /app/
-   ```
-
-### Logs and Monitoring
-
+**Docker logs** (no shell in the image):
 ```bash
-# View systemd service logs
-sudo journalctl -u socks5-server -f
-
-# View Docker container logs
 docker logs -f socks5-proxy
-
-# Check service status
-sudo systemctl status socks5-server
 ```
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+**Systemd logs:**
+```bash
+sudo journalctl -u socks5-server -f
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT.
 
 ## Support
 
-- 📖 **Documentation:** Check this README and inline help (`--help`)
-- 🐛 **Issues:** [GitHub Issues](https://github.com/ariadata/go-socks5-proxy/issues)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/ariadata/go-socks5-proxy/discussions)
+- Help: `./socks5-server --help`
+- Issues: [GitHub Issues](https://github.com/ariadata/go-socks5-proxy/issues)
 
 ## Acknowledgments
 
-- Built with [go-socks5](https://github.com/armon/go-socks5) library
-- Inspired by the need for a simple, secure SOCKS5 proxy solution
+Built with [go-socks5](https://github.com/armon/go-socks5).

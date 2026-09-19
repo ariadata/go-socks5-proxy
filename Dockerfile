@@ -1,33 +1,24 @@
 FROM golang:1.26-alpine AS builder
 
-# Install required system packages and update certificates
 RUN apk update && \
     apk upgrade && \
     apk add --no-cache ca-certificates && \
     update-ca-certificates
 
-# Add Maintainer Info
 LABEL maintainer="AriaData <info@ariadata.co>"
 
-# Set the Current Working Directory inside the container
 WORKDIR /build
 
-# Copy go mod and sum files
-COPY go.mod go.sum main.go ./
-
-# Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o socks5-server .
+COPY *.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o socks5-server .
 
-######## Start a new stage from scratch #######
 FROM scratch
 
 COPY --from=builder /build/socks5-server /socks5-server
 
-# Expose port 1080 to the outside
 EXPOSE 1080
 
-# Command to run the executable
 CMD ["/socks5-server"]
