@@ -5,47 +5,45 @@ on:
     branches:
       - main
 
+permissions:
+  packages: write
+  contents: read
+
 jobs:
   build-and-push:
-    runs-on: 
-      group: self-hosted
-      #labels:
-      #  - Linux
-    permissions:
-      packages: write
-      contents: read
-
+    runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # Step 2: Log in to GitHub Container Registry (GHCR)
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 3: Define dynamic image name and tag based on repo name
       - name: Set dynamic image name and tag
         id: vars
         run: |
-          REPO_NAME=$(basename "${{ github.repository }}") # Extract the repository name
+          set -euo pipefail
+          REPO_NAME=$(basename "${{ github.repository }}")
           IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/$REPO_NAME"
           GIT_SHA="${{ github.sha }}"
-          TAG="main-${GIT_SHA:0:7}" # Example: Use first 7 characters of commit SHA
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
+          TAG="main-${GIT_SHA:0:7}"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
 
-      # Step 4: Build the Docker image with both tags
-      - name: Build Docker image
-        run: |
-          docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # Step 5: Push both Docker image tags to GHCR
-      - name: Push Docker image to GHCR
-        run: |
-          docker push $IMAGE_NAME:$IMAGE_TAG
-          docker push $IMAGE_NAME:latest
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

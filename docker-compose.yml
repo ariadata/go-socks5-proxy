@@ -8,6 +8,6 @@ services:
     restart: unless-stopped
     ports:
       - '${DC_PROXY_PORT:-1080}:1080'
-    command: ["./socks5-server", "--host", "0.0.0.0", "--port", "1081" , "--users", "/app/users.conf"]
+    command: ["/socks5-server", "--host", "0.0.0.0", "--port", "1080", "--users", "/users.conf"]
     volumes:
-      - ./users.conf:/app/users.conf
+      - ./users.conf:/users.conf:ro
