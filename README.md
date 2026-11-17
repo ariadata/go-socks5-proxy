@@ -69,6 +69,8 @@ go build -o socks5-server .
 | `--users FILE` | Path to users config file | (none) |
 | `--user USER` | `username:password` (repeatable) | (none) |
 | `--allow-internal` | Allow proxying to private/internal IPs | `false` |
+| `--ipv4-only` | Only resolve and connect to IPv4 addresses | `false` |
+| `--ipv6-only` | Only resolve and connect to IPv6 addresses | `false` |
 | `--version` | Print version | |
 | `--help` | Print help | |
 
