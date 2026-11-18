@@ -37,6 +37,8 @@ func printHelp() {
 	fmt.Println("  --users FILE             Path to users configuration file")
 	fmt.Println("  --user USER              User credentials in format username:password (can be used multiple times)")
 	fmt.Println("  --allow-internal         Allow proxying to private/internal IPs (default: false)")
+	fmt.Println("  --ipv4-only              Only resolve and connect to IPv4 addresses (default: false)")
+	fmt.Println("  --ipv6-only              Only resolve and connect to IPv6 addresses (default: false)")
 	fmt.Println("  --version                Show version information")
 	fmt.Println("  --help                   Show this help message")
 	fmt.Println()
@@ -76,6 +78,8 @@ func main() {
 		host          = flag.String("host", "0.0.0.0", "Host to bind to")
 		usersFile     = flag.String("users", "", "Path to users configuration file")
 		allowInternal = flag.Bool("allow-internal", false, "Allow proxying to private/internal IPs (default: false)")
+		ipv4Only      = flag.Bool("ipv4-only", false, "Only resolve and connect to IPv4 addresses (default: false)")
+		ipv6Only      = flag.Bool("ipv6-only", false, "Only resolve and connect to IPv6 addresses (default: false)")
 		help          = flag.Bool("help", false, "Show help message")
 		version       = flag.Bool("version", false, "Show version information")
 	)
@@ -149,12 +153,27 @@ func main() {
 		log.Println("Internal/private destinations: blocked")
 	}
 
+	if *ipv4Only && *ipv6Only {
+		log.Fatal("--ipv4-only and --ipv6-only cannot be used together")
+	}
+	// Without either flag all address families are tried, falling back to the next address on failure
+	network := "ip"
+	if *ipv4Only {
+		network = "ip4"
+		log.Println("IPv4 only: enabled")
+	} else if *ipv6Only {
+		network = "ip6"
+		log.Println("IPv6 only: enabled")
+	}
+	resolver := fallbackResolver{network: network}
+	dial := newDialer(network, *allowInternal)
+
 	var conf *socks5.Config
 
 	if len(credentials) == 0 {
 		// No credentials provided - allow anonymous access
 		log.Println("No credentials provided - running without authentication")
-		conf = &socks5.Config{Rules: rules}
+		conf = &socks5.Config{Rules: rules, Resolver: resolver, Dial: dial}
 	} else {
 		// Credentials provided - require authentication
 		log.Printf("Running with authentication - %d credential(s) configured", len(credentials))
@@ -182,6 +201,8 @@ func main() {
 		conf = &socks5.Config{
 			AuthMethods: []socks5.Authenticator{authenticator},
 			Rules:       rules,
+			Resolver:    resolver,
+			Dial:        dial,
 		}
 	}
 
